@@ -31,8 +31,79 @@ module load htslib/1.10.1
 BAM_DIR=/path/to/bam
 OUT_DIR=/output/path/fastq
 
-#samtools view -b $BAM_DIR/output_merged.bam -d dx:0 -d dx:-1 | samtools fastq | bgzip -@ 4 -c > $OUT_DIR/merged.simplex.fastq.gz
-#samtools view -b $BAM_DIR/output_merged.bam -d dx:1 | samtools fastq | bgzip -@ 4 -c > $OUT_DIR/merged.duplex.fastq.gz
-samtools view -b $BAM_DIR/output_merged.bam -d dx:0 -d dx:1 | samtools fastq | bgzip -@ 4 -c > $OUT_DIR/merged.simplex_duplex.fastq.gz
+#samtools view -b $BAM_DIR/output_merged.bam -d dx:0 -d dx:-1 | samtools fastq | bgzip -@ 4 -c > $OUT_DIR/merged_simplex.fastq.gz
+#samtools view -b $BAM_DIR/output_merged.bam -d dx:1 | samtools fastq | bgzip -@ 4 -c > $OUT_DIR/merged_duplex.fastq.gz
+samtools view -b $BAM_DIR/output_merged.bam -d dx:0 -d dx:1 | samtools fastq | bgzip -@ 4 -c > $OUT_DIR/merged_simplex_duplex.fastq.gz
+
+
+
+### sequencing adapters were removed using Porechop
+#!/bin/bash
+
+module load htslib/1.10.1
+
+porechop_runner=/path/to/Porechop/porechop-runner.py
+INPUT_DIR=/path/to/fastq
+OUT_DIR=/output/path/chopper_fastq
+
+$porechop_runner -i $INPUT_DIR/merged.simplex.fastq.gz -o $OUT_DIR/merged_simplex.porechop.fastq.gz
+
+
+
+### reads containing the DNA Control Sequence were filtered out through the CLEAN workflow 
+#!/bin/bash
+
+module load Java/17.0.4
+module load GCC/10.2.0
+module load OpenMPI/4.0.5
+module load Singularity/3.10.2
+
+INPUT_DIR=/path/to/chopper_fastq
+OUT_DIR=/output/nextflow
+
+cd $OUT_DIR
+
+nextflow run rki-mf1/clean -r v1.1.2 \
+        --input_type nano \
+        --input $INPUT_DIR/merged_simplex.porechop.fastq.gz \
+        --control dcs \
+        --output $OUT_DIR \
+        -profile singularity
+
+
+
+### Low-quality reads were further removed using Chopper v0.9.0 
+#!/bin/bash
+
+conda activate chopper
+
+INPUT_FASTQ=/path/to/merged_simplex.porechop.nextflow.fastq.gz
+OUT_DIR=/output/chopper_fastq
+
+#gunzip -c $INPUT_DIR/merged_simplex_porechop.fastq.gz | chopper -q 7 --tailcrop 50 | gzip > $OUT_DIR/simplex.p.nextflow.chopper_q7_t50.fastq.gz
+#gunzip -c $INPUT_DIR/merged_simplex_porechop.fastq.gz | chopper -q 8 --tailcrop 50 | gzip > $OUT_DIR/simplex.p.nextflow.chopper_q8_t50.fastq.gz
+#gunzip -c $INPUT_DIR/merged_simplex_porechop.fastq.gz | chopper -q 9 --tailcrop 50 | gzip > $OUT_DIR/simplex.p.nextflow.chopper_q9_t50.fastq.gz
+#gunzip -c $INPUT_DIR/merged_simplex_porechop.fastq.gz | chopper -q 10 --tailcrop 50 | gzip > $OUT_DIR/simplex.p.nextflow.chopper_q10_t50.fastq.gz
+#gunzip -c $INPUT_DIR/merged_simplex_porechop.fastq.gz | chopper -q 15 --tailcrop 50 | gzip > $OUT_DIR/simplex.p.nextflow.chopper_q15_t50.fastq.gz
+#gunzip -c $INPUT_DIR/merged_simplex_porechop.fastq.gz | chopper --headcrop 50 --tailcrop 50 | gzip > $OUT_DIR/simplex.p.nextflow.chopper_h50_t50.fastq.gz
+#gunzip -c $INPUT_DIR/merged_simplex_porechop.fastq.gz | chopper --headcrop 50 | gzip > $OUT_DIR/simplex.p.nextflow.chopper_h50.fastq.gz
+#gunzip -c $INPUT_FASTQ | chopper -q 8 --headcrop 50 | gzip > $OUT_DIR/simplex.porechop.nextflow.chopper_q8_h50.fastq.gz
+#gunzip -c $INPUT_FASTQ | chopper --headcrop 50 | gzip > $OUT_DIR/simplex.porechop.nextflow.chopper_h50.fastq.gz
+#gunzip -c $INPUT_FASTQ | chopper --tailcrop 50 | gzip > $OUT_DIR/simplex.porechop.nextflow.chopper_t50.fastq.gz
+gunzip -c $INPUT_FASTQ | chopper -q 8 | gzip > $OUT_DIR/simplex.porechop.nextflow.chopper_q8.fastq.gz
+
+
+
+### Quality metrics were assessed using NanoPlot
+#!/bin/bash
+
+conda activate Python_Env
+
+INPUT_FASTQ=/path/to/chopper_fastq/simplex.porechop.nextflow.chopper_q8.fastq.gz
+OUT_DIR=/output/nanoplot/simplex/q8
+
+#mkdir -p $OUT_DIR
+
+NanoPlot --fastq $INPUT_FASTQ --loglength -o $OUT_DIR
 
 
