@@ -1,0 +1,38 @@
+### use pod5 software for conversion of fast5 files
+#!/bin/bash
+
+conda activate Python_Env
+
+POD5_DIR=/path/pod5
+
+pod5 subset $POD5_DIR/ --summary $POD5_DIR/output_summary.tsv --columns channel --output $POD5_DIR/split_by_channel
+
+
+
+### Duplex basecalling was performed with Dorado v0.9.0 using the model “dna_r10.4.1_e8.2_400bps_sup@v4.1.0” to produce a BAM output file 
+#!/bin/bash
+
+export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:4096
+
+POD5_DIR=/path/pod5
+OUT_DIR=/output/path/bam
+
+dorado duplex --batchsize 1536 dna_r10.4.1_e8.2_400bps_sup@v4.1.0 $POD5_DIR/split_by_channel/ > $OUT_DIR/output.bam
+
+
+
+### .bam format needs to be converted to fastq using SAMtools
+#!/bin/bash
+
+module load GCC/12.3.0
+module load SAMtools/1.19.2
+module load htslib/1.10.1
+
+BAM_DIR=/path/to/bam
+OUT_DIR=/output/path/fastq
+
+#samtools view -b $BAM_DIR/output_merged.bam -d dx:0 -d dx:-1 | samtools fastq | bgzip -@ 4 -c > $OUT_DIR/merged.simplex.fastq.gz
+#samtools view -b $BAM_DIR/output_merged.bam -d dx:1 | samtools fastq | bgzip -@ 4 -c > $OUT_DIR/merged.duplex.fastq.gz
+samtools view -b $BAM_DIR/output_merged.bam -d dx:0 -d dx:1 | samtools fastq | bgzip -@ 4 -c > $OUT_DIR/merged.simplex_duplex.fastq.gz
+
+
