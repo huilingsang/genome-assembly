@@ -1,0 +1,115 @@
+### contig assembly was conducted with the filtered ONT reads using Flye v2.9.5
+#!/bin/bash
+
+conda activate Flye
+
+INPUT_READS=/path/chopper_fastq/simplex.porechop.nextflow.chopper_q7.fastq.gz
+OUT_DIR=/output/flye/simplex/q7
+
+mkdir $OUT_DIR
+
+flye --nano-hq $INPUT_READS --out-dir $OUT_DIR --genome-size 0.8g --read-error 0.03 --no-alt-contigs --scaffold
+
+
+
+### contig assembly was conducted with the filtered ONT reads using hifiasm v0.25.0-r726 
+#!/bin/bash
+
+conda activate hifiasm
+
+INPUT_FASTQ=/path/chopper_fastq/simplex.porechop.nextflow.chopper_q8.fastq.gz
+OUT_DIR=/output/hifiasm/simplex/q8
+
+mkdir $OUT_DIR
+
+hifiasm --ont -o $OUT_DIR/simplex_q7_h50_t50.hifiasm $INPUT_FASTQ
+
+
+
+### Assemblies were polished with Medaka v1.11.0 (https://github.com/nanoporetech/medaka) to improve base-level accuracy
+#!/bin/bash
+
+conda activate Medaka
+
+#FLYE_ASM=/path/flye/simplex/q7/assembly.fasta
+HIFI_ASM=/path/hifiasm/simplex/q8/simplex_q8.asm.bp.p_ctg.gfa
+#INPUT_FASTQ=/path/chopper_fastq/simplex.porechop.nextflow.chopper_q7.fastq.gz
+INPUT_FASTQ=/path/chopper_fastq/simplex.porechop.nextflow.chopper_q8.fastq.gz
+#OUT_DIR=/output/polished/flye/simplex_q7
+OUT_DIR=/output/polished/flye/simplex_q8
+
+#medaka_consensus -d $FLYE_ASM -i $INPUT_FASTQ -o $OUT_DIR -m r1041_e82_400bps_sup_v4.1.0
+medaka_consensus -d $HIFI_ASM -i $INPUT_FASTQ -o $OUT_DIR -m r1041_e82_400bps_sup_v4.1.0
+
+
+### Redundant haplotigs were identified and removed using Purge Haplotigs v1.1.2 
+#!/bin/bash
+
+conda activate purge_haplotigs
+
+FASTQ=/path/to/simplex.porechop.nextflow.chopper_q8.fastq.gz
+ASM=/path/to/polished.fa
+OUT_DIR=/output/purged/hifiasm_simplex_q8
+
+samtools faidx $ASM
+minimap2 -ax map-ont $ASM $FASTQ | samtools sort -@ 4 -o $OUT_DIR/hifiasm_simplex_q8_polished.bam
+samtools index $OUT_DIR/hifiasm_simplex_q8_polished.bam
+purge_haplotigs hist -b $OUT_DIR/hifiasm_simplex_q8_polished.bam -g $ASM
+
+purge_haplotigs cov -i $BAM_DIR/hifiasm_simplex_q8_polished.bam.200.gencov -l 20 -m 60 -h 200 [-o coverage_stats.csv -j 80  -s 80 ]
+purge_haplotigs purge -g $ASM -c $OUT_DIR/coverage_stats.csv -d -b $BAM_DIR/hifiasm_simplex_q8_polished.bam -o $OUT_DIR/hifiasm_simplex_q8_polished_purged
+
+
+
+### Assembly quality metrics were evaluated using QUAST v5.3.0 
+#!/bin/bash
+
+conda activate quast
+
+ASM=/path/to/hifiasm_simplex_q8_polished_purged.fasta
+REF=/path/to/ref_genome/uk_nuclear_genome.fasta
+OUT_DIR=/output/quast
+
+mkdir -p $OUT_DIR
+quast.py -o $OUT_DIR -r $REF --fragmented $ASM
+
+
+
+### Genome completeness was assessed using BUSCO v5.8.2 
+#!/bin/bash
+
+conda activate busco
+
+ASM=/path/to/hifiasm_simplex_q8_polished_purged.fasta
+OUT_DIR=/output/busco
+
+mkdir -p $OUT_DIR
+echo "Run BUSCO"
+cd $OUT_DIR
+busco -i $ASM -o johndory -m genome -l actinopterygii_odb10
+
+
+
+### Snail plots were generated with BlobToolKit v4.4.5 
+#!/bin/bash
+
+conda activate btk
+
+ASM=/path/to/hifiasm_simplex_q8_polished_purged.fasta
+BUSCO_DIR=/output/busco/johndory/run_actinopterygii_odb10
+OUT_DIR=/output/circle_plot
+
+mkdir -p $OUT_DIR
+cd $OUT_DIR
+
+blobtools create \
+    --fasta $ASM \
+    --busco $BUSCO_DIR/full_table.tsv \
+    $OUT_DIR/Zeusfaber_JDO
+
+blobtools view \
+    --plot \
+    --view snail \
+    $OUT_DIR/Zeusfaber_JDO
+
+
