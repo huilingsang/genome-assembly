@@ -4,10 +4,88 @@
 conda activate ragtag
 
 ASM=/path/to/hifiasm_simplex_q8_polished_purged.fasta
-FASTQ=/nfs/scratch/sanghu/johndory/chap2_ref_genome/02_reads_filter/duplex_called/fastq/simplex.porechop.nextflow.chopper_q8.fastq.gz
-REF=/nfs/scratch/sanghu/johndory/chap2_ref_genome/uk_genome/ref_genome/uk_nuclear_genome.fasta
-OUT_DIR=/nfs/scratch/sanghu/johndory/chap2_ref_genome/08_ragtag_nuclear/l20_m60_h200
+FASTQ=/path/to/simplex.porechop.nextflow.chopper_q8.fastq.gz
+REF=/path/to/ref_genome/uk_nuclear_genome.fasta
+OUT_DIR=/output/
 
-ragtag.py correct -t 60 $REF $ASM -o $OUT_DIR/ragtag_correct -R $FASTQ -T ont
-ragtag.py scaffold -t 40 -r $REF $ASM -o $OUT_DIR
+ragtag.py correct $REF $ASM -o $OUT_DIR/ragtag_correct -R $FASTQ -T ont
+ragtag.py scaffold -r $REF $ASM -o $OUT_DIR
+
+
+
+### Gaps introduced during scaffolding were filled using TGS-GapCloser v1.2.1 with the ONT long-read data.
+#!/bin/bash
+
+module load seqkit/0.13.2
+#module load minimap2/2.16
+
+export PATH=/path/to/TGS-GapCloser/minimap2:$PATH
+
+tgsgapcloser=/path/to/TGS-GapCloser/tgsgapcloser
+ASM=/path/to/ragtag.scaffold.fasta
+FASTQ=/path/to/simplex.porechop.nextflow.chopper_q8.fastq.gz
+OUT_DIR=/output/gap_filled
+
+cd $OUT_DIR
+#seqkit fq2fa $FASTQ > ont.fasta
+$tgsgapcloser --scaff $ASM --reads ont.fasta --output gapclose --ne --tgstype ont --thread 4
+
+
+
+### identify and remove low-coverage scaffolds
+#!/bin/bash
+
+module load minimap2/2.16
+module load samtools/1.10
+module load bamtools/2.5.1
+
+ASM=/path/to/gap_filled/gapclose.scaff_seqs
+FASTQ=/path/to/simplex.porechop.nextflow.chopper_q8.fastq.gz
+OUT_DIR=/output/scaffolds_filtered
+
+cd $OUT_DIR
+
+#minimap2 -ax map-ont $ASM $FASTQ | samtools sort -@4 -o $OUT_DIR/reads_map.bam
+#samtools index $OUT_DIR/reads_map.bam
+
+# only retain primary alignments with a map quality >20
+bamtools filter -mapQuality '>=20' -isPrimaryAlignment 'true' -in reads_map.bam -out $OUT_DIR/reads_mq20.primaryaln.bam
+samtools index reads_mq20.primaryaln.bam
+
+samtools coverage reads_mq20.primaryaln.bam > bamtools_scaffolds_cov_q20.tsv
+
+
+
+### NCBI Foreign Contamination Screen (FCS) toolset v0.5.5 was applied to detect and purge any potential contaminants
+#!/bin/bash
+
+module load GCC/10.2.0
+module load OpenMPI/4.0.5
+module load Singularity/3.10.2
+module load GCCcore/13.3.0
+module load Python/3.12.3
+
+#Assign the path to the --gx-db folder to GXDB_LOC
+GXDB_LOC=/path/to/decontam_FCS/FCS/db_folder
+
+GENOME=/path/to/scaffolds_filtered/filtered_scaffolds_final.fasta
+OUT_DIR=/output/decontam_FCS/fcs_results
+
+python3 fcs.py --image fcs-gx.sif screen genome --fasta $GENOME --out-dir $OUT_DIR/ --gx-db "$GXDB_LOC" --tax-id 64108
+
+
+
+### use TIDK to detect telomeres
+#!/bin/bash
+
+conda activate tidk
+
+ASM=/path/to/filtered_scaffolds_final.fasta.chr.fa
+OUT_DIR=/output/tidk_out
+
+mkdir -p $OUT_DIR
+cd $OUT_DIR
+
+tidk search --string TTAGGG -w 10000 --output search_TTAGGG_w10000 --dir $OUT_DIR $ASM
+#tidk plot --tsv $OUT_DIR/search_TTAGGG_w10000_telomeric_repeat_windows.tsv
 
