@@ -1,0 +1,7 @@
+#!/bin/bash
+
+conda activate Python_Env
+
+POD5_DIR=/path/pod5
+
+pod5 subset $POD5_DIR/ --summary $POD5_DIR/output_summary.tsv --columns channel --output $POD5_DIR/split_by_channel
