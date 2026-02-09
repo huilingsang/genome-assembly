@@ -65,7 +65,6 @@ mkdir $IQTREE2_OUT
 cd $IQTREE2_OUT
 
 seqkit concat --infile-list $INPUT_DIR/list_trimed_rname_files > $IQTREE2_OUT/supermatrix.fa
-
 $IQTREE2 -s $IQTREE2_OUT/supermatrix.fa -m MFP -B 1000 -T AUTO --prefix iqtree2_species_tree
 
 
@@ -125,9 +124,6 @@ UK_PROTEIN=/path/to/braker.codingseq
 module load last/953
 
 #python -m jcvi.compara.catalog ortholog NZ UK --no_strip_names
-
 #python -m jcvi.compara.blastfilter NZ.UK.last --no_strip_names
-
 #python -m jcvi.compara.synteny screen --minspan=20 --simple NZ.UK.lifted.anchors NZ.UK.anchors.simple
-
 python -m jcvi.graphics.karyotype seqids layout
