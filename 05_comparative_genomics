@@ -1,0 +1,133 @@
+### Single-copy orthologous groups were identified using Orthofinder v2.5.5 
+#!/bin/bash
+
+conda activate orthofinder
+
+#extract just the longest transcript variant per gene
+#for f in $WORK_DIR/*.faa; do python /nfs/home/sanghu/.conda/envs/orthofinder/bin/primary_transcript.py $f; done
+
+WORK_DIR=/path/to/proteins/primary_transcripts
+orthofinder -f $WORK_DIR/
+
+
+
+### Orthologous protein sequences were aligned using MAFFT v7.525
+#!/bin/bash
+
+module load GCC/10.2.0
+module load MAFFT/7.475-with-extensions
+
+WORK_DIR=/path/to/primary_transcripts/OrthoFinder
+Ortho_DIR=$WORK_DIR/dir/Single_Copy_Orthologue_Sequences
+OUT_DIR=$WORK_DIR/mafft_out
+
+mkdir $OUT_DIR
+
+for fa in $Ortho_DIR/*.fa; do
+    filename=$(basename "$fa" .fa)
+    mafft --auto "$fa" > "$OUT_DIR/${filename}.aln.fa"
+done
+
+
+
+### Orthologous protein sequences were trimmed with trimAl v1.5.0 
+#!/bin/bash
+
+conda activate trimAL
+
+WORK_DIR=/path/primary_transcripts/OrthoFinder
+MAFFT_OUT=$WORK_DIR/mafft_out
+TRIMAL_OUT=$WORK_DIR/trim_out
+
+mkdir $TRIMAL_OUT
+
+for aln in "$MAFFT_OUT"/*.aln.fa; do
+    base=$(basename "$aln" .aln.fa)
+    echo "Trimming $base.aln.fa with trimAl ..."
+    # run trimAl
+    trimal -in "$aln" -out "$TRIMAL_OUT/${base}.trim.fasta" -automated1
+done
+
+
+
+### A maximum likelihood (ML) phylogenomic tree was constructed using IQ-TREE 2 v8.2.12 
+#!/bin/bash
+
+module load seqkit/0.13.2
+IQTREE2=/path/to/bin/iqtree2
+
+INPUT_DIR=/path/primary_transcripts/OrthoFinder/rename_header_after_trim
+
+find $INPUT_DIR/*.trim.fasta -print > $INPUT_DIR/list_trimed_rname_files
+
+IQTREE2_OUT=/path/to/primary_transcripts/OrthoFinder/iqtree2_out
+mkdir $IQTREE2_OUT
+cd $IQTREE2_OUT
+
+seqkit concat --infile-list $INPUT_DIR/list_trimed_rname_files > $IQTREE2_OUT/supermatrix.fa
+
+$IQTREE2 -s $IQTREE2_OUT/supermatrix.fa -m MFP -B 1000 -T AUTO --prefix iqtree2_species_tree
+
+
+
+### Divergence times were estimated using MCMCTree within PAML v4.9 
+#!/bin/bash
+
+conda activate paml
+
+mcmctree mcmctree.ctl
+
+## Follow instructions there: http://abacus.gene.ucl.ac.uk/software/MCMCtree.Tutorials.pdf Tutorial 4: Approximate likelihood with protein data
+## Use the appropriate model .dat file
+## then run:
+mcmctree codeml tmp0001.ctl
+
+## Follow instructions again: Rename file “rst2” as “in.BV”, edit mcmctree.ctl
+
+mcmctree mcmctree.ctl
+rundir2=$dir/run2/
+mkdir -p $rundir2
+
+cd $rundir2
+
+cp $rundir1/* $rundir2/
+rm SeedUsed
+rm mcmc.txt
+rm FigTree.tre
+rm out.txt
+
+mcmctree mcmctree.ctl
+
+
+
+### gene-level chromosomal synteny analysis was performed using the JCVI v1.5.11
+#!/bin/bash
+
+conda activate jcvi
+
+NZ_GFF=/path/to/braker.gff3
+UK_GFF=/path/to/braker.gff3
+OUT_DIR=/output/comparative_genomics/jcvi
+
+cd $OUT_DIR
+
+#python -m jcvi.formats.gff bed --type=mRNA --key=ID $NZ_GFF -o NZ.bed
+#python -m jcvi.formats.gff bed --type=mRNA --key=ID $UK_GFF -o UK.bed
+
+#module load ncbi/blast+/2.6.0
+NZ_PROTEIN=/path/to/braker.codingseq
+UK_PROTEIN=/path/to/braker.codingseq
+
+# reformat the sequences
+#python -m jcvi.formats.fasta format $NZ_PROTEIN NZ.cds
+#python -m jcvi.formats.fasta format $UK_PROTEIN UK.cds
+
+module load last/953
+
+#python -m jcvi.compara.catalog ortholog NZ UK --no_strip_names
+
+#python -m jcvi.compara.blastfilter NZ.UK.last --no_strip_names
+
+#python -m jcvi.compara.synteny screen --minspan=20 --simple NZ.UK.lifted.anchors NZ.UK.anchors.simple
+
+python -m jcvi.graphics.karyotype seqids layout
