@@ -1,0 +1,159 @@
+### mask repeats
+#!/bin/bash
+
+module load htslib/1.10.1
+
+#download Dfam and check if the download is corrupted
+#wget "https://www.dfam.org/releases/Dfam_3.7/families/Dfam.h5.gz"
+#wget "https://www.dfam.org/releases/Dfam_3.7/families/Dfam.h5.gz.md5sum"
+
+#download RepBase
+#wget https://github.com/yjx1217/RMRB/blob/master/RepBaseRepeatMaskerEdition-20181026.tar.gz
+
+#bgzip -cd Dfam.h5.gz > Dfam.h5
+wget https://www.dfam.org/releases/current/families/FamDB/dfam39_full.0.h5.gz
+wget https://www.dfam.org/releases/current/families/FamDB/dfam39_full.4.h5.gz
+wget https://www.dfam.org/releases/current/families/FamDB/dfam39_full.10.h5.gz
+wget https://www.dfam.org/releases/current/families/FamDB/dfam39_full.11.h5.gz
+wget https://www.dfam.org/releases/current/families/FamDB/dfam39_full.12.h5.gz
+
+bgzip -cd dfam39_full.0.h5.gz > dfam39_full.0.h5
+bgzip -cd dfam39_full.4.h5.gz > dfam39_full.4.h5
+bgzip -cd dfam39_full.10.h5.gz > dfam39_full.10.h5
+bgzip -cd dfam39_full.11.h5.gz > dfam39_full.11.h5
+bgzip -cd dfam39_full.12.h5.gz > dfam39_full.12.h5
+
+
+
+### run RepeatModeler
+#!/bin/bash
+
+module load singularity/3.7.3
+
+NZ_ASM=/path/to/filtered_scaffolds_final.fasta
+REPEAT_DIR=/output/repeat_masking
+DFAM_SIF_v1_87=/path/to/dfam-tetools-latest.sif
+
+#0. combine libs
+#singularity exec $DFAM_SIF_v1_87 addRepBase.pl -libdir $REPEAT_DIR/Repeat_masker_libs/Libraries
+
+#1. Create a database for RepeatModeler - build a database of repeats found in your assembly
+#mkdir $REPEAT_DIR/nz_output/nz_filtered_final_db_repeats
+#singularity run $DFAM_SIF_v1_87 BuildDatabase -name $REPEAT_DIR/nz_output/nz_filtered_final_db_repeats/JDO_repeat_db -engine ncbi $NZ_ASM
+
+#2. Identify Transposable Elements (TEs) using RepeatModeler
+#singularity run $DFAM_SIF_v1_87 RepeatModeler -threads 16 -LTRStruct -database $REPEAT_DIR/nz_output/nz_filtered_final_db_repeats/JDO_repeat_db
+
+#3. Check if the taxonomic group is available
+#singularity exec $DFAM_SIF_v1_87 famdb.py -i $REPEAT_DIR/Repeat_masker_libs/Libraries/RepeatMaskerLib.h5 lineage -ad 'Actinopterygii'
+#extract repeats
+#singularity exec $DFAM_SIF_v1_87 famdb.py -i $REPEAT_DIR/Repeat_masker_libs/Libraries/RepeatMaskerLib.h5 families -ad --add-reverse-complement Actinopterygii > $REPEAT_DIR/nz_output/nz_db_repeats/Actinopterygii_library.fa
+
+#4. merge dfam and repeatmodeler databases
+#cat $REPEAT_DIR/libraries_nz/JDO_repeat_db-families.fa $REPEAT_DIR/dfam_libs/Actinopterygii_library.fa > $REPEAT_DIR/libraries_nz/combined_library.fa
+
+#5. run repeatmasker - -xsmall changes repeat regions to lower case (i.e. softmasking)
+export LIBDIR=/path/to/Repeat_masker_libs/Libraries
+singularity exec $DFAM_SIF_v1_87 RepeatMasker -pa 32 -dir /path/nz_output/nz_filtered_final_repeatmasker -xsmall -lib $REPEAT_DIR/nz_output/nz_filtered_final_db_repeats/combined_library.fa $NZ_ASM
+
+#(Optional) 6. Convert soft-masked assembly to hard-masked
+#sed 's/[acgt]/N/g' $REPEAT_OUTPUT/assembly.softmasked.fasta > $REPEAT_OUTPUT/assembly.hardmasked.fasta
+
+
+
+##### genome annotation
+### run braker3 pipeline to predict gene models
+#!/bin/bash
+
+module load singularity
+module load samtools/1.10
+#module load htslib/1.10.1
+
+#singularity build braker3.sif docker://teambraker/braker3:latest
+#cd /path/to/genome_annotation/ortho_db
+#wget "https://bioinf.uni-greifswald.de/bioinf/partitioned_odb11/Vertebrata.fa.gz"
+#gzip -d Vertebrata.fa.gz
+
+#Augustus config
+AUG_CONFIG=/path/to/augustus/config
+#ortho_db
+ORTHO_DB=/path/to/genome_annotation/ortho_db/Vertebrata.fa
+SOFTMASKED_FASTA=/path/to/filtered_scaffolds_final.fasta.masked
+BRAKER_SIF=/path/to/braker3.sif
+BRAKER_OUT=/output/genome_annotation/braker_out
+
+# Run BRAKER with the specified parameters
+singularity exec -B /path/to/genome_annotation:/path/to/genome_annotation \
+        $BRAKER_SIF braker.pl \
+        --genome=$SOFTMASKED_FASTA \
+        --prot_seq=$ORTHO_DB \
+        --threads=12 \
+        --workingdir=$BRAKER_OUT \
+        --AUGUSTUS_CONFIG_PATH=$AUG_CONFIG \
+        --gff3
+
+
+### Functional annotation was performed by sequence similarity searches against the Swiss-Prot database (UniProtKB; https://www.uniprot.org/uniprotkb) using BLASTp v2.6.0 
+#!/bin/bash
+
+module load ncbi/blast+/2.6.0
+
+BRAKER=/path/to/genome_annotation/braker_out/braker3_gffread.aa.fasta
+SWISSPROT_DB=/path/to/swissprot_db
+OUT_DIR=/output/blastp_out
+
+#makeblastdb -in $SWISSPROT_DB/uniprot_sprot.fasta -dbtype prot -out $SWISSPROT_DB/swissprot.nb -title nr
+#echo "database built finish"
+
+blastp -db $SWISSPROT_DB/swissprot.nb \
+        -query $BRAKER \
+        -evalue 1e-6 \
+        -max_hsps 1 \
+        -max_target_seqs 5 \
+        -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+        -out $OUT_DIR/blast_nr.tsv \
+        -num_threads 8
+
+
+
+### Protein domains and functional signatures were further annotated using InterProScan v5.75-106.0 by searching publicly available databases 
+#!/bin/bash
+
+module load Java/11.0.2
+module load python/3.8.1
+
+INTERPROSCAN=/path/to/genome_annotation/InterProScan/interproscan-5.75-106.0
+BRAKER=/path/to/genome_annotation/braker_out/braker3_gffread.aa.fasta
+OUT_DIR=/output/interproscan_out
+
+sed 's/\*//g' $BRAKER | \
+        $INTERPROSCAN/interproscan.sh \
+        -i - \
+        -f tsv,gff3,xml \
+        --goterms \
+        -iprlookup \
+        --pathways \
+        -t p \
+        -cpu 12 \
+        -b $OUT_DIR/braker_iprscan
+
+
+
+### Results from BLASTp and InterProScan were integrated into a unified annotation using AGAT v1.4.1 
+#!/bin/bash
+
+conda activate agat
+
+WORK_DIR=/path/togenome_annotation
+BRAKER_GGF3=$WORK_DIR/braker_out/braker3_gffread.gff3
+BLASTP_RESULTS=$WORK_DIR/blastp_out/blast_nr.tsv
+BLASTP_DB=$WORK_DIR/swissprot_db/uniprot_sprot.fasta
+INTERPROSCAN_RESULTS=$WORK_DIR/interproscan_out/braker_iprscan.tsv
+AGAT_OUT=$WORK_DIR/agat_out
+
+agat_sp_manage_functional_annotation.pl -f $BRAKER_GGF3 -b $BLASTP_RESULTS --db $BLASTP_DB -i $INTERPROSCAN_RESULTS \
+        --clean_name --clean_product --clean_dbxref \
+        --be 1e-6 \
+        -a \
+        -o $AGAT_OUT/agat_combined
+
